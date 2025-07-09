@@ -6,11 +6,13 @@ import {PriceConverter, AggregatorV3Interface} from "./PriceConverter.sol";
 error Fundme__NotOwner();
 
 contract FundMe {
-    address public immutable i_owner;
-    uint256 public constant MINIMUM_USD = 5 * 10 ** 18;
+    using PriceConverter for uint256;
 
-    address[] public funders;
-    mapping(address => uint256) public addressToAmountFunded;
+    address private immutable i_owner;
+    uint256 private constant MINIMUM_USD = 5 * 10 ** 18;
+
+    address[] private s_funders;
+    mapping(address => uint256) private s_addressToAmountFunded;
     AggregatorV3Interface private s_priceFeed;
 
     constructor(address priceFeed) {
@@ -23,28 +25,25 @@ contract FundMe {
         _;
     }
 
-    function getVersion() public view returns (uint256) {
-        return s_priceFeed.version();
-    }
-
     function fund() public payable {
-        if (msg.value >= MINIMUM_USD) {
+        uint256 usdvalue = msg.value.getConversionRate(s_priceFeed);
+        if (usdvalue <= MINIMUM_USD) {
             revert("You need to spend more ETH!");
         }
-        addressToAmountFunded[msg.sender] += msg.value;
-        funders.push(msg.sender);
+        s_addressToAmountFunded[msg.sender] += msg.value;
+        s_funders.push(msg.sender);
     }
 
-    function withdraw() public payable {
+    function withdraw() public payable onlyOwner{
         for (
             uint256 funderIndex = 0;
-            funderIndex < funders.length;
+            funderIndex < s_funders.length;
             funderIndex++
         ) {
-            address funder = funders[funderIndex];
-            addressToAmountFunded[funder] = 0;
+            address funder = s_funders[funderIndex];
+            s_addressToAmountFunded[funder] = 0;
         }
-        funders = new address[](0);
+        s_funders = new address[](0);
         (bool success, ) = payable(msg.sender).call{
             value: address(this).balance
         }("");
@@ -60,4 +59,31 @@ contract FundMe {
     receive() external payable {
         fund();
     }
+    /**
+     * Getter Functions
+     */
+    function getAddressToAmountFunded(address fundingAddress) public view returns (uint256) {
+        return s_addressToAmountFunded[fundingAddress];
+    }
+
+    function getVersion() public view returns (uint256) {
+        return s_priceFeed.version();
+    }
+
+    function getFunder(uint256 index) public view returns (address) {
+        return s_funders[index];
+    }
+
+    function getOwner() public view returns (address) {
+        return i_owner;
+    }
+
+    function getPriceFeed() public view returns (AggregatorV3Interface) {
+        return s_priceFeed;
+    }
+
+    function getMinimumUSD() public pure returns (uint256) {
+        return MINIMUM_USD;
+    }
+
 }
